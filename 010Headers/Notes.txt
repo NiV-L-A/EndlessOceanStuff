@@ -1,0 +1,2 @@
+These .h files should be in \Documents\SweetScape\010 Templates
+The directory can be changed in Tools->Options->Directories->Template Directory

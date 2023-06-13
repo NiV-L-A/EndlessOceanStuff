@@ -1,0 +1,117 @@
+//------------------------------------------------
+//--- 010 Editor v13.0.1 Binary Template
+//
+//      File: Endless Ocean param.dat
+//   Authors: NiV
+//   Version: 0.2
+//   Purpose: Parsing the param.dat files from Endless Ocean 2
+//  Category: Endless Ocean Modding Experience
+// File Mask: 
+//  ID Bytes: FKF0
+//   History: 
+//------------------------------------------------
+
+/*
+50 params:
+COM VER CPL CFL
+SCO STM FLG SHT
+LEC LE1 PLC RAY
+FCV SBL SC0 SC1
+SC2 SC3 SC4 LAM
+LDI LA1 LD1 DEP
+MSN MSS MSA FGN
+FGF MSC POS CL0
+CL1 CL2 CL3 CL4
+SCM SBM LCO DLM
+FLR GLW LWE SCP
+RCP SMD SBG SDR
+CLT FGC
+
+LAM, LDI, LEC = RGB (float) (val * 255) (entity colors?)
+*/
+
+local byte PrintInfo = true;
+local uint FloatCol = cGreen;
+local uint GroupCol = cWhite;
+local uint UIntCol = cRed;
+local uint RareCol = cLtBlue;
+local ushort i = 0;
+
+struct Header_t
+{
+	if (ReadByte(0x05) == 0) //Only test stage and b12land
+		LittleEndian();
+	else
+		BigEndian();
+	char Magic[4]<bgcolor=cRed>;
+	byte unk1<bgcolor=cBlack, fgcolor=cRed>;
+	byte IsBigEndian<bgcolor=cRed>;
+	ushort unk2<bgcolor=cBlack, fgcolor=cRed>;
+	ushort ParamsCount<bgcolor=cAqua>;
+	ushort ChunksCount<bgcolor=cAqua>;
+	uint Size<bgcolor=cBlue>;
+	uint ParamsOff<bgcolor=cPurple>;
+	uint SizeCopy<bgcolor=cBlue>;
+	uint IdxOff<bgcolor=cPurple>;
+};
+
+struct Param_t
+{
+	char Name[3]<bgcolor=cBlack, fgcolor=cSilver>;
+	ubyte ProgIdx<bgcolor=cBlack, fgcolor=cRed>;
+	local byte TempType = Types[i].Type;
+	if (TempType == 0x04) //most common - float
+		float Value<bgcolor=cBlack, fgcolor=FloatCol>;
+	else if (TempType == 0x00) //less common - group/collection
+		uint Value<bgcolor=cWhite, fgcolor=GroupCol>;
+	else if (TempType == 0x03) //rare - flag, uint
+		uint Value<bgcolor=cBlack, fgcolor=UIntCol>;
+	else //if (LType == 0x02) //rarest
+		uint Value<bgcolor=cBlack, fgcolor=RareCol>;
+	i += 1;
+};
+
+struct Types_t
+{
+	if (ReadByte() == 0x04) //most common - float
+		ubyte Type<bgcolor=cBlack, fgcolor=FloatCol>;
+	else if (ReadByte() == 0x00) //less common - group/collection
+		ubyte Type<bgcolor=cWhite, fgcolor=GroupCol>;
+	else if (ReadByte() == 0x03) //rare - flag, uint
+		ubyte Type<bgcolor=cBlack, fgcolor=UIntCol>;
+	else //if (ReadByte() == 0x02) //rarest
+		ubyte Type<bgcolor=cBlack, fgcolor=RareCol>;
+};
+
+//
+// Start
+//
+
+Header_t Header[1]<optimize=true>;
+FSeek(Header.IdxOff);
+Types_t Types[Header.ParamsCount]<optimize=false>;
+FSeek(Header.ParamsOff);
+Param_t Params[Header.ParamsCount]<optimize=false>;
+
+if (PrintInfo == 1)
+{
+	local uint j = 0;
+	local uint k = 0;
+	local int TMP = Header.ParamsOff;
+	Printf("Name | Type | j | Value | FTell\n");
+	Printf("\tName | Type | ProgIdx | Value * 255 | Value\n\n");
+	for (i = 0; i < Header.ChunksCount; i++)
+	{
+		Printf("%s | %01X | %04X | %04X | %08X\n", Params[j].Name, Types[j].Type, j, Params[j].Value, TMP);
+		for (k = 0; k < Params[j].Value; k++)
+		{
+			Printf("\t%s | %01X | %01X | ", Params[k+1+j].Name, Types[k+1+j].Type, Params[k+1+j].ProgIdx);
+			if (Types[k+1+j].Type == 0x04) //float
+				Printf("[%08X] | %f\n", Params[k+1+j].Value * 255, Params[k+1+j].Value);
+			else /*if (Indices[k+1+j].Index == 0x03) //uint*/
+				Printf("[%08X] | %d\n", Params[k+1+j].Value, Params[k+1+j].Value);
+		}
+		TMP += (Params[j].Value + 1) * 8;
+		j += (Params[j].Value + 1);
+	}
+}

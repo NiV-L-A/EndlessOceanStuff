@@ -1,0 +1,709 @@
+//------------------------------------------------
+//--- 010 Editor v12.0.1 Binary Template
+//
+//      File: Endless Ocean .mdl
+//   Authors: NiV
+//   Version: 0.1.6
+//   Purpose: Parsing the .mdl 3D Model files from the Endless Ocean serie
+//  Category: Endless Ocean Modding Experience
+// File Mask: 
+//  ID Bytes: RFPMD2 - RF2MD2 - RF2MD3
+//   History: 
+//------------------------------------------------
+#include "EO_utils.h"
+#include "EO_mol.h"
+#include "EO_mot.h"
+
+//
+// Initialization
+//
+
+local byte ColorIndices = 0; //Might take a few moments
+local byte PrintMeshPos = 1;
+local byte PrintBoneInfo = 1;
+local byte PrintObjList = 1;
+local byte PrintMotPos = 1;
+local byte MD2 = 0;
+local byte MD3 = 0;
+local ushort ObjListType = 0x130;
+local uint VDLOffLocal = 0;
+local uint MOLOffLocal = 0;
+local uint MOTOffLocal = 0;
+local uint VtxCol = cPurple;
+local uint NormCol = 0x7F00FF;
+local uint LightCol = 0x7F007F;
+local uint UvCol = 0xFF003E;
+local uint Uv2Col = 0xFF007F;
+enum IndexStatus
+{
+	IND_NONE = 0,
+	IND_BYTE = 2,
+	IND_SHORT = 3
+};
+local IndexStatus VtxIndex = 0;
+local IndexStatus NormIndex = 0;
+local IndexStatus LightIndex = 0;
+local IndexStatus UvIndex = 0;
+local IndexStatus Uv2Index = 0;
+
+//
+// Object List
+//
+
+//
+// VDL Unk section
+//
+
+struct UnkVDLSection_t
+{
+	byte Count<bgcolor=cAqua>;
+	char a[3]<bgcolor=cBlack, fgcolor=cDkRed>;
+	char b[0x1C * Count]<bgcolor=cBlack, fgcolor=cRed>;
+};
+
+struct LOD_t
+{
+	junk32 unk1;
+	Name_t Name(cBlack, cSilver, 0x10)<optimize=true>;
+};
+
+typedef struct Object_t
+{
+	junk unk1;
+	junk unk2;
+	junk unk3;
+	byte Code<bgcolor=cYellow>;
+	byte Level<bgcolor=cRed>;
+	byte TranspFlag<bgcolor=cRed>;
+	ushort Idx<bgcolor=0xF08000>;
+	Vec3 Trans(cGreen, cNone)[1]<optimize=false>;
+	Vec4 Rot(0x008000, cNone)[1]<optimize=false>;
+	Vec3 Scale(0x004000, cNone)[1]<optimize=false>;
+	char Name[0x10]<bgcolor=cSilver>;
+};
+
+typedef struct ObjList_t
+{
+	if (ObjListType >= 0x12F)
+	{
+		ushort ObjectCount<bgcolor=cAqua>;
+		ushort LODCount<bgcolor=cAqua>;
+		uint ObjListOff<bgcolor=cPurple>;
+		uint ObjListSize<bgcolor=cBlue>;
+	}
+	Object_t Object[Header.CountsOffs.ObjectsCount]<optimize=true>;
+	if (ObjListType >= 0x12F)
+		if (LODCount > 0)
+			LOD_t LODs[LODCount]<optimize=true>;
+	if (Header.RFHeader.MagicRFTypeVersion == "3")
+		if (Header.CountsOffs.UnkVDLSectionCount > 0)
+			UnkVDLSection_t UnkVDLSection[Header.CountsOffs.UnkVDLSectionCount]<optimize=false>; //should seek with offsets
+};
+
+//
+// Mesh Info
+//
+
+struct InfoIdx_t
+{
+	short MatIdx<bgcolor=0x00ff90>; 
+	junk unk1<bgcolor=cBlack, fgcolor=cRed>;
+	byte Optimization<bgcolor=0x00ff48>; //3 triangles, 4 tristrip
+	junk16 unk2<bgcolor=cBlack, fgcolor=cGray>; // unk5/3 = face count
+	junk16 unk3<bgcolor=cBlack, fgcolor=cGray>;
+	uint Off<bgcolor=cPurple>;
+};
+
+struct MeshInfo_t
+{
+	byte unk1<bgcolor=cYellow>;
+	byte MeshType<bgcolor=cYellow>;
+	ushort unk2<bgcolor=cYellow>;
+	ushort unk3<bgcolor=cBlack, fgcolor=cLtGray>;
+	ushort IdxSectionsCount<bgcolor=cAqua>;
+	uint AlwaysZero<bgcolor=cBlack, fgcolor=cDkRed>;
+	uint AlwaysFF<bgcolor=cBlack, fgcolor=cDkRed>;
+	float unk4<bgcolor=0x00ff00>;
+	Vec3 Origin(0x008000, cNone)[1]<optimize=true>;
+	Vec3 AxisMin(0x008000, cNone)[1]<optimize=true>;
+	Vec3 AxisMax(0x008000, cNone)[1]<optimize=true>;
+	uint MeshHeaderOff<bgcolor=cPurple>;
+	uint MeshSize<bgcolor=cBlue>;
+	
+	if (MeshType == 0x50)
+	{
+	    ushort BonesCount<bgcolor=0xffffa0>;
+	    ushort unk5<bgcolor=cBlack, fgcolor=cGray>;
+	    uint SkelDataOff<bgcolor=cPurple>;
+	}
+	InfoIdx_t InfoIdx[IdxSectionsCount]<optimize=true>;
+};
+
+//
+// Materials
+//
+
+struct MatMD3_t(byte TextureCount)
+{
+	if (TextureCount == 1)
+	{
+		ushort TextureIdx<bgcolor=cDkBlue>;
+		ushort unk1;
+	}
+	else //if (TextureCount == 2)
+	{
+		ushort TextureIdx<bgcolor=cLtBlue>;
+		ushort unk1;
+		ushort TextureIdx2<bgcolor=cLtBlue>;
+		ushort unk2;
+	}
+};
+
+struct MatInfo_t
+{
+	int Off<bgcolor=cPurple>;
+	byte TextureCount<bgcolor=cDkAqua>;
+	junk unk1;
+	ushort ProgIdx<bgcolor=cDkAqua>;
+	float unk2<bgcolor=cGreen>;
+};
+
+struct MatMD2_t
+{
+	ushort TextureIdx<bgcolor=cDkBlue>;
+	junk16 unk1;
+	junk32 unk2;
+	float unk3<bgcolor=cBlack, fgcolor=cGreen>;
+};
+
+//
+// MD Info
+//
+
+struct CountsOffs_t
+{
+	if (Header.RFHeader.MagicRFTypeVersion == "2") //MD2
+	{
+		junk16 unk1;
+		junk16 unk2;
+		ushort ObjectsCount<bgcolor=cAqua>;
+		ushort TDLFilesRefCount<bgcolor=cAqua>;
+		ushort MatCount<bgcolor=cAqua>;
+		ushort MeshCount<bgcolor=cAqua>;
+		ushort MeshWithBonesCount<bgcolor=cAqua>;
+		ushort MotFilesCount<bgcolor=cAqua>;
+		uint MatOff<bgcolor=cDkPurple>;
+		ObjListType = 0x12E;
+	}
+	else //MD3
+	{
+		ushort unk1;
+		ushort ObjectListType<bgcolor=cAqua>;
+		ushort ObjectsCount<bgcolor=cAqua>;
+		ushort TDLFilesRefCount<bgcolor=cAqua>;
+		ushort UnkVDLSectionCount<bgcolor=cBlack, fgcolor=cAqua>;
+		ushort MatInfoCount<bgcolor=cAqua>;
+		ushort MatCount<bgcolor=cAqua>;
+		ushort MeshCount<bgcolor=cAqua>;
+		ushort MeshWithBonesCount<bgcolor=cAqua>;
+		ushort MotFilesCount<bgcolor=cAqua>;
+		uint UnkVDLSectionInfoOff<bgcolor=cDkPurple>;
+		uint MatsInfoOff<bgcolor=cPurple>;
+		uint MatsIndexOff<bgcolor=cPurple>;
+		ObjListType = ObjectListType;
+	}
+	
+	Offs_t MeshInfoOffs(cPurple, cNone)[MeshCount]<optimize=true>;
+	BigEndian();
+	if (Header.RFHeader.MagicRFTypeVersion == "3" && Header.CountsOffs.UnkVDLSectionCount > 0) //MD3 only
+		Offs_t UnkVDLSectionOffs(cDkPurple, cNone)[UnkVDLSectionCount]<optimize=true>;
+};
+
+//
+// MD Main
+//
+
+struct Header_t
+{
+	LittleEndian();
+	RFHeader_t RFHeader[1]<optimize=true>;
+	//VDLOffLocal = RFHeader.Files[0].FileOff;
+	CountsOffs_t CountsOffs[1]<optimize=true>;
+	if (RFHeader.MagicRFTypeVersion == "2")
+	{
+		MD2 = 1;
+		FSeek(CountsOffs.MatOff);
+		MatMD2_t MatMD2[CountsOffs.MatCount];
+	}
+	else
+	{
+		MD3 = 1;
+		FSeek(CountsOffs.MatsInfoOff);
+		MatInfo_t MatInfo[CountsOffs.MatInfoCount];
+		local int i = 0;
+		for (i = 0; i < CountsOffs.MatInfoCount; i++)
+		{
+			FSeek(MatInfo[i].Off);
+			MatMD3_t MatMD3(MatInfo[i].TextureCount)<optimize=false>;
+		}
+	}
+	MeshInfo_t MeshInfo[CountsOffs.MeshCount]<optimize=false>;
+};
+
+//
+// VDL
+//
+
+//
+// VDL Mesh Skel
+//
+
+struct SkelDataHeader_t
+{
+	uint Size<bgcolor=cBlue>;
+	uint WeightsIdxOff<bgcolor=cPurple>;
+	uint WeightsOff<bgcolor=cPurple>;
+	uint VtxCount<bgcolor=cAqua>;
+};
+
+struct SkelData_t(MeshInfo_t &MeshInfo)
+{
+	SkelDataHeader_t Header[1]<optimize=true>;
+	Name_t Bones(cSilver, cNone, 0x10)[MeshInfo.BonesCount]<optimize=true>;
+	Mat44 Mat(cLtGreen, cNone)[MeshInfo.BonesCount]<optimize=true>;
+
+	FSeek(VDLOffLocal + MeshInfo.SkelDataOff + Header.WeightsOff);
+	Vec4 Weights(cGreen, cNone)[Header.VtxCount]<optimize=true>;
+
+	FSeek(VDLOffLocal + MeshInfo.SkelDataOff + Header.WeightsIdxOff);
+	BVec4 WeightsIdx(cDkGreen, cNone)[Header.VtxCount]<optimize=true>;
+};
+
+//
+// VDL Mesh
+//
+
+struct MeshHeader_t
+{
+	uint VtxOff<bgcolor=cPurple>;
+	uint NormOff<bgcolor=NormCol>;
+	uint LightOff<bgcolor=LightCol>;
+	uint UvOff<bgcolor=UvCol>;
+	
+	if (VtxOff == 0x40)
+	{
+	    uint Uv2Off<bgcolor=Uv2Col>;
+	    junk32 MaybeUv3Off;
+	    junk32 MaybeUv4Off;
+	}
+	
+	uint IdxOff<bgcolor=cBlack>;
+	ushort VtxCount<bgcolor=cPurple>;
+	ushort NormCount<bgcolor=NormCol>;
+	ushort LightCount<bgcolor=LightCol>;
+	ushort UvCount<bgcolor=UvCol>;
+	if (VtxOff == 0x40)
+	{
+		ushort Uv2Count<bgcolor=Uv2Col>;
+		junk16 MaybeUv3Count;
+		junk16 MaybeUv4Count;
+	}
+	junk16 MaxCount;
+	
+	if (VtxOff == 0x40)
+	{
+		junk16 unk1;
+		ushort IdxSizeFlags<bgcolor=cRed>;
+		junk32 unk2;
+		junk unk3;
+		byte IdxStride<bgcolor=cRed>;
+		byte IsStrideExtended<bgcolor=cRed>;
+		byte UvMapsCount<bgcolor=cAqua>;
+		byte VtxStride<bgcolor=cRed>;
+		byte NormStride<bgcolor=cRed>;
+		byte LightStride<bgcolor=cRed>;
+		byte UvStride<bgcolor=cRed>;
+	}
+	else
+	{
+		junk unk1;
+		byte IsStrideExtended<bgcolor=cRed>;
+		local byte IdxStride = 0;
+	}
+};
+
+struct IND_t(ushort cnt)
+{
+	if (VtxIndex == 3)
+		ushort pos<bgcolor=cPurple>;
+	else
+		ubyte pos<bgcolor=cPurple>;
+	
+	if (NormIndex == 3)
+		ushort norm<bgcolor=NormCol>;
+	else
+		ubyte norm<bgcolor=NormCol>;
+	
+	if (LightIndex == 3)
+		ushort light<bgcolor=LightCol>;
+	else if (LightIndex == 2)
+		ubyte light<bgcolor=LightCol>;
+	
+	if (UvIndex == 3)
+		ushort uv<bgcolor=UvCol>;
+	else
+		ubyte uv<bgcolor=UvCol>;
+	
+	if (Uv2Index == 3)
+		ushort uv2<bgcolor=Uv2Col>;
+	else if (Uv2Index == 2)
+		ubyte uv2<bgcolor=Uv2Col>;
+};
+
+struct Indices_t(MeshInfo_t &MeshInfo, MeshHeader_t &MeshHeader)
+{
+	ParseInd(MeshInfo, MeshHeader);
+};
+
+struct MeshData_t(MeshInfo_t &MeshInfo, MeshHeader_t &MeshHeader)
+{
+	FSeek(VDLOffLocal + MeshInfo.MeshHeaderOff + MeshHeader.VtxOff);
+	Vec3Stride Vtx(cBlack, VtxCol, MeshHeader.IsStrideExtended == 1 ? 0x18 : 0xC)[MeshHeader.VtxCount]<optimize=true>;
+	FSeek(VDLOffLocal + MeshInfo.MeshHeaderOff + MeshHeader.NormOff);
+	Vec3Stride Norm(cBlack, NormCol, MeshHeader.IsStrideExtended == 1 ? 0x18 : 0xC)[MeshHeader.NormCount]<optimize=true>;
+	if (MeshHeader.LightCount != 0)
+	{
+		FSeek(VDLOffLocal + MeshInfo.MeshHeaderOff + MeshHeader.LightOff);
+		BVec4 Light(LightCol, cNone)[MeshHeader.LightCount]<optimize=true>;
+	}
+	FSeek(VDLOffLocal + MeshInfo.MeshHeaderOff + MeshHeader.UvOff);
+	Vec2 Uv(cBlack, UvCol)[MeshHeader.UvCount]<optimize=true>;
+	if (MeshHeader.VtxOff == 0x40) //EO2 supports multitexturing
+	{
+		if (MeshHeader.UvMapsCount == 2)
+		{
+			FSeek(VDLOffLocal + MeshInfo.MeshHeaderOff + MeshHeader.Uv2Off);
+			Vec2 Uv2(cBlack, Uv2Col)[MeshHeader.Uv2Count]<optimize=true>;
+		}
+	}
+	FSeek(VDLOffLocal + MeshInfo.MeshHeaderOff + MeshInfo.InfoIdx[0].Off);
+	Indices_t Indices(MeshInfo, MeshHeader)[1]<optimize=false>;
+};
+
+struct Mesh_t(MeshInfo_t &MeshInfo)
+{
+	local float qx = 0;
+	local float qy = 0;
+	local float qz = 0;
+	local float qw = 0;
+	local Vec4 Quat(cNone, cNone);
+	if (MeshInfo.MeshType == 0x50)
+	{
+		local int k = 0;
+		FSeek(VDLOffLocal + MeshInfo.SkelDataOff);
+		SkelData_t SkelData(MeshInfo)[1]<optimize=true>;
+		if (PrintBoneInfo == 1)
+		{
+			for (j = 0; j < MeshInfo.BonesCount; j++)
+			{
+				for (k = 0; k < Header.CountsOffs.ObjectsCount; k++)
+				{
+					if (ObjList.Object[k].Name == SkelData.Bones[j].Name)
+					{
+						Printf("\n[0x%04X]-[0x%08X]-[0x%04X]-%s-----------\n", j, VDLOffLocal + MeshInfo.SkelDataOff + 0x10 + MeshInfo.BonesCount * 0x10 + 0x40 * j, k, SkelData.Bones[j].Name);
+						Printf("%s\n", read_vec4(SkelData.Mat[j].M0));
+						Printf("%s\n", read_vec4(SkelData.Mat[j].M1));
+						Printf("%s\n", read_vec4(SkelData.Mat[j].M2));
+						Printf("%s\n", read_vec4(SkelData.Mat[j].M3));
+						Printf("%11f %11f %11f %11f\n\n", Mat44ToQuatX(SkelData.Mat[j]), Mat44ToQuatY(SkelData.Mat[j]), Mat44ToQuatZ(SkelData.Mat[j]), Mat44ToQuatW(SkelData.Mat[j]));
+						Printf("%s\n", read_vec3(ObjList.Object[k].Trans));
+						Printf("%s\n", read_vec4(ObjList.Object[k].Rot));
+						Printf("%s\n", read_vec3(ObjList.Object[k].Scale));
+						break;
+					}
+				}
+			}
+		 }
+	}
+	FSeek(VDLOffLocal + Header.MeshInfo[i].MeshHeaderOff);
+	MeshHeader_t MeshHeader[1]<optimize=false>;
+	MeshData_t MeshData(MeshInfo, MeshHeader)[1]<optimize=false>;
+};
+
+
+
+//
+// VDL Main
+//
+
+struct VDL_t(uint &VDLOffLocal)
+{
+	ObjList_t ObjList[1]<optimize=true>;
+	local int i = 0;
+	for (i = 0; i < Header.CountsOffs.MeshCount; i++)
+	{
+		if (Header.MeshInfo[i].MeshType == 0x50)
+			FSeek(VDLOffLocal + Header.MeshInfo[i].SkelDataOff);
+		else
+			FSeek(VDLOffLocal + Header.MeshInfo[i].MeshHeaderOff);
+
+        if (PrintMeshPos == 1)
+            Printf("\nMesh: %i\t[0x%04X]\t[0x%08X]", i, i, FTell());
+		Mesh_t Mesh(Header.MeshInfo[i])[1]<optimize=false>;
+	}
+};
+
+void ParseVDL(RFFile_t &v)
+{
+	VDLOffLocal = v.FileOff;
+	FSeek(VDLOffLocal);
+	VDL_t VDL(VDLOffLocal)[1]<optimize=true>;
+}
+
+void ParseMOL(RFFile_t &v)
+{
+	MOLOffLocal = v.FileOff;
+	FSeek(MOLOffLocal);
+	MOL_t MOL(MOLOffLocal)[1]<optimize=true>;
+}
+
+void ParseMOT(RFFile_t &v)
+{
+	MOTOffLocal = v.FileOff + MOLOffLocal;
+	FSeek(MOTOffLocal);
+	MOT_t MOT(MOTOffLocal)[1]<optimize=false>;
+}
+
+void PrintObjList(ObjList_t &ObjList)
+{
+	local int i = 0;
+	local int j = 0;
+	local string Tab;
+	local string objName = "";
+	for (i = 0; i < Header.CountsOffs.ObjectsCount; i++)
+	{
+		Printf("\n");
+		Tab = "";
+		for (j = 0; j < ObjList.Object[i].Level; j++)
+		{
+			Tab += "\t";
+		}
+		objName = "%s(%d) %02X %02X %02X %02X | %02X %02X %04X %s %f %f %f %f %f %f %f %f %f %f";
+		Printf(objName, Tab, i, ObjList.Object[i].unk1, ObjList.Object[i].unk2, ObjList.Object[i].unk3, ObjList.Object[i].Code, ObjList.Object[i].Level, ObjList.Object[i].TranspFlag, ObjList.Object[i].Idx, ObjList.Object[i].Name, ObjList.Object[i].Trans.X, ObjList.Object[i].Trans.Y, ObjList.Object[i].Trans.Z, ObjList.Object[i].Rot.X, ObjList.Object[i].Rot.Y, ObjList.Object[i].Rot.Z, ObjList.Object[i].Rot.W, ObjList.Object[i].Scale.X, ObjList.Object[i].Scale.Y, ObjList.Object[i].Scale.Z);
+	}
+}
+
+byte UnderstandIndexCount(byte GPU, ubyte GPU2, MeshHeader_t &MeshHeader)
+{
+	local byte FragmentSize = 0;
+	
+	if (GPU2 != 0)
+	{
+		if ((GPU2 & 0b00000011) == 0b00000011)
+		{
+			VtxIndex = 3; FragmentSize += 2;
+		}
+		else if ((GPU2 & 0b00000010) == 0b00000010)
+		{
+			VtxIndex = 2; FragmentSize += 1;
+		}
+		
+		if ((GPU2 & 0b00001100) == 0b00001100)
+		{
+			NormIndex = 3; FragmentSize += 2;
+		}
+		else if ((GPU2 & 0b00001000) == 0b00001000)
+		{
+			NormIndex = 2; FragmentSize += 1;
+		}
+		
+		if ((GPU2 & 0b00110000) == 0b00110000)
+		{
+			LightIndex = 3; FragmentSize += 2;
+		}
+		else if ((GPU2 & 0b00100000) == 0b00100000)
+		{
+			LightIndex = 2; FragmentSize += 1;
+		}
+		
+		if ((GPU2 & 0b11000000) == 0b11000000)
+		{
+			UvIndex = 3; FragmentSize += 2;
+		}
+		else if ((GPU2 & 0b10000000) == 0b10000000)
+		{
+			UvIndex = 2; FragmentSize += 1;
+		}
+		
+		if (GPU != 0)
+		{
+			if ((GPU & 0b00000011) == 0b00000011)
+			{
+				Uv2Index = 3; FragmentSize += 2;
+			}
+			else if ((GPU & 0b00000010) == 0b00000010)
+			{
+				Uv2Index = 2; FragmentSize += 1;
+			}
+		}
+	}
+	else
+	{
+		if (MeshHeader.VtxCount >= 0xFF || MD2 || MeshHeader.IdxStride == 0)
+		{
+			VtxIndex = 3; FragmentSize += 2;
+		}
+		else
+		{
+			VtxIndex = 2; FragmentSize += 1; //t
+		}
+		if (MeshHeader.NormCount >= 0xFF || MD2 || MeshHeader.IdxStride == 0)
+		{
+			NormIndex = 3; FragmentSize += 2;
+		}
+		else
+		{
+			NormIndex = 2; FragmentSize += 1; //t
+		}
+		if (MeshHeader.LightCount >= 0xFF || MD2 && MeshHeader.LightOff > 0 || MeshHeader.LightOff > 0) //If RF2MD2 and there's light data, light will always be 2 bytes for the indices.
+		{
+			LightIndex = 3; FragmentSize += 2;
+		}
+		else if (MD3 && MeshHeader.LightOff > 0)
+		{
+			LightIndex = 2; FragmentSize += 1; //t
+		}
+		else
+		{
+			LightIndex = 0;
+		}
+		
+		if (MeshHeader.UvCount >= 0xFF || MD2 || MeshHeader.IdxStride == 0)
+		{
+			UvIndex = 3; FragmentSize += 2;
+		}
+		else
+		{
+			UvIndex = 2; FragmentSize += 1; //t
+		}
+		if (MeshHeader.VtxOff == 0x40)
+		{
+			if (MeshHeader.Uv2Off > 0 && MeshHeader.Uv2Count >= 0xFF)
+			{
+				Uv2Index = 3; FragmentSize += 2;
+			}
+			else if (MD3 && MeshHeader.Uv2Off > 0)
+			{
+				Uv2Index = 2; FragmentSize += 1;
+			}
+			else
+			{
+				Uv2Index = 0;
+			}
+		}
+	}
+	return FragmentSize;
+}
+
+void ParseInd(MeshInfo_t &MeshInfo, MeshHeader_t &MeshHeader)
+{
+	local ushort IndSections = MeshInfo.IdxSectionsCount;
+	local uint i = 0;
+	if (MeshHeader.VtxOff == 0x40)
+		local byte FragmentSize = UnderstandIndexCount(MeshHeader.IdxSizeFlags >> 8, (byte)MeshHeader.IdxSizeFlags, MeshHeader);
+	else
+		local byte FragmentSize = UnderstandIndexCount(0, 0, MeshHeader);
+
+	local ushort NStrips = 0;
+	local uint k = 0;
+
+	for (i = 0; i < IndSections; i++)
+	{
+		NStrips = 0;
+		k = 0;
+		FSeek(VDLOffLocal + MeshInfo.MeshHeaderOff + MeshInfo.InfoIdx[i].Off);
+		do //For each draw call
+		{
+			ushort unk<fgcolor=cRed, bgcolor=cBlack>;
+			ushort vtxCount<fgcolor=cGreen, bgcolor=cBlack>;
+
+			while (vtxCount < 3)
+			{
+				FSeek(FTell() + (vtxCount * FragmentSize));
+				ushort indunk<fgcolor=cRed, bgcolor=cBlack>;
+				ushort vtxCount<fgcolor=cGreen, bgcolor=cBlack>;
+			}
+			if (ColorIndices == false)
+				FSkip(vtxCount * FragmentSize);
+			else
+				IND_t Ind(vtxCount)[vtxCount]<optimize=false>;
+		} while ((unk & 0x1) != 0x0);
+	}
+
+	VtxIndex = 0;
+	NormIndex = 0;
+	LightIndex = 0;
+	UvIndex = 0;
+	Uv2Index = 0;
+}
+
+struct TXS_t
+{
+	RFHeader_t RFHeader[1]<optimize=true>;
+	ushort Count1<bgcolor=cAqua>;
+	ushort Count2<bgcolor=cAqua>;
+	ushort Indices[Count1]<bgcolor=cBlack, fgcolor=cRed>;
+};
+
+//
+// Start
+//
+    
+Header_t Header[1]<optimize=true>;
+local int i = 0;
+local int j = 0;
+for (i = 0; i < Header.RFHeader.FileCount; i++)
+{
+	if (Header.RFHeader.Files[i].IsInFile == 1) //parse only if file is in the archive
+	{
+		//Printf("\n");
+		if (Header.RFHeader.Files[i].FileType == 0) //check the RFFileType enum in EO_Utils.h
+		{
+			Printf("\n");
+			ParseVDL(Header.RFHeader.Files[i]);
+			if (PrintObjList)
+				PrintObjList(VDL.ObjList[0]);
+		}
+		else if (Header.RFHeader.Files[i].FileType == 2)
+		{
+			Printf("\n");
+			FSeek(Header.RFHeader.Files[i].FileOff);
+			TXS_t TXS[1]<optimize=false>;
+		}
+		else if (Header.RFHeader.Files[i].FileType == 7)
+		{
+			Printf("\n");
+			ParseMOL(Header.RFHeader.Files[i]);
+		}
+	}
+}
+
+//
+// MOT
+//
+
+Printf("\n");
+if (Header.CountsOffs.MotFilesCount > 0)
+{
+	for (i = 0; i < MOL.RFHeader.FileCount; i++)
+	{
+		if (MOL.RFHeader.Files[i].IsInFile == 1)
+		{
+			FSeek(MOLOffLocal + MOL.RFHeader.Files[i].FileOff);
+			if (PrintMotPos == 1)
+				Printf("\n\nMot: %i\t[0x%04X]\t[0x%08X]", i, i, FTell());
+			ParseMOT(MOL.RFHeader.Files[i]);
+		}
+	}
+}
+Printf("\nDone!\n");

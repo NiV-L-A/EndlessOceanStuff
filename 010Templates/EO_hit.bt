@@ -1,0 +1,150 @@
+//------------------------------------------------
+//--- 010 Editor v12.0.1 Binary Template
+//
+//      File: Endless Ocean .hit file
+//   Authors: NiV
+//   Version: 1.4
+//   Purpose: Parse the .hit hitbox files from Endless Ocean
+//  Category: Endless Ocean Modding Experience
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+#include "EO_utils.h"
+
+local byte PrintInfo = 0;
+local uint TMP;
+local uint TMP2;
+local uint TMP3;
+local uint TMP4;
+local uint i = 0;
+local uint j = 0;
+BigEndian();
+
+struct PolyInfo_t
+{
+	uint VtxCount<fgcolor=cLtBlue, bgcolor=cBlack>;
+	uint VtxOff<bgcolor=cBlue>;
+	uint unk1<fgcolor=cRed, bgcolor=cBlack>;
+	uint unk2<fgcolor=cRed, bgcolor=cBlack>;
+	Vec4 NormalizedFloats(cBlack, cLtGreen)[1]<optimize=true>;
+};
+
+struct ColInfo_t
+{
+	uint OneOrTwo<fgcolor=cRed, bgcolor=cBlack>;
+	uint PolyCount<bgcolor=cAqua>;
+	uint PolyOff<fgcolor=cAqua, bgcolor=cBlack>;
+	float unk1<fgcolor=cGreen, bgcolor=cBlack>;
+	Vec4 Floats(cBlack, cGreen)[3]<optimize=false>;
+};
+
+struct ColNameList_t(ushort Version)
+{
+	if (Version == 1)
+		char Name[0x10]<bgcolor=cSilver>;
+	else //if (Version == 0x10)
+		char Name[0x20]<bgcolor=cSilver>;
+};
+
+struct Header_t
+{
+	ushort unk1<fgcolor=cRed, bgcolor=cBlack>;
+	ushort Version<fgcolor=cRed, bgcolor=cBlack>;
+	char Magic[0x04]<bgcolor=cRed>;
+	uint ColCount<fgcolor=cAqua, bgcolor=cBlack>;
+	uint ColDataOff<fgcolor=cPurple, bgcolor=cBlack>;
+	uint PolyDataOff<fgcolor=cPurple, bgcolor=cBlack>;
+	uint VtxDataOff<fgcolor=cPurple, bgcolor=cBlack>;
+	byte Endianness<bgcolor=cRed>; //1 = LE, 2 = BE. 1 crashes game, but if first it finds 2 and then 1, it byteswaps the fields and then crashes.
+	junkchar unk2[0x3]<fgcolor=cRed, bgcolor=cBlack>;
+	uint FBHOff<bgcolor=cPurple>;
+	ColNameList_t ColNameList(Version)[ColCount]<optimize=true>;
+};
+
+struct ColData_t(Header_t &Header)
+{
+	ColInfo_t ColInfo[1]<optimize=false>;
+	FSeek(Header.PolyDataOff + ColInfo.PolyOff * 0x20);
+	PolyInfo_t PolyInfo[ColInfo.PolyCount]<optimize=false>;
+	for (j = 0; j < ColInfo.PolyCount; j++)
+	{
+		FSeek(Header.VtxDataOff + PolyInfo[j].VtxOff * 0x10);
+		Vec4 Floats(cBlack, cGreen)[PolyInfo[j].VtxCount]<optimize=false>;
+	}
+	i++;
+	FSeek(Header.ColDataOff + i * 0x40);
+};
+
+struct FBHHeader_t
+{
+	char Magic[0x3]<bgcolor=cRed>;
+	char Version[1]<bgcolor=cRed>;
+	if (Version == "2")
+	{
+		uint DeltaTransCount<bgcolor=cAqua>;
+		uint ColNameListOff<bgcolor=cPurple>;
+		junk32 unk1;
+	}
+	else //if (Version == "3")
+	{
+		junk16 unk1<fgcolor=cRed, bgcolor=cBlack>;
+		ushort ColCount<bgcolor=cAqua>;
+		ushort DeltaTransCount<bgcolor=cAqua>;
+		ushort ColNameListOff<bgcolor=cPurple>;
+		junkchar unk2[0x4]<fgcolor=cRed, bgcolor=cBlack>;
+		uint Off01<bgcolor=cPurple>;
+		uint Off02<bgcolor=cPurple>;
+	}
+};
+
+struct FBH2DeltaTrans_t
+{
+	Vec3 Trans(cBlack, cGreen)[1]<optimize=false>;
+	ushort ID<fgcolor=cAqua, bgcolor=cBlack>;
+	byte ColNameLen<fgcolor=cRed, bgcolor=cBlack>; //Usually 8. The game extracts the first 8 characters from the ColName
+	byte NextColsCount<fgcolor=cDkAqua, bgcolor=cBlack>;
+};
+
+struct FBH3DeltaTrans_t
+{
+	ushort ID<fgcolor=cAqua, bgcolor=cBlack>;
+	byte NextColsCount<fgcolor=cDkAqua, bgcolor=cBlack>;
+	byte ColNameLen<fgcolor=cRed, bgcolor=cBlack>; //Usually 8. The game extracts the first 8 characters from the ColName
+	Vec3 Trans(cBlack, cGreen)[1]<optimize=false>;
+	Vec4 Rot(cBlack, cGreen)[1]<optimize=false>;
+};
+
+struct FBHData_t
+{
+	FBHHeader_t FBHHeader[1]<optimize=false>;
+	if (FBHHeader.Version == "2")
+	{
+		FBH2DeltaTrans_t FBHDeltaTrans[FBHHeader.DeltaTransCount]<optimize=true>;
+	}
+	else //if (FBHHeader.Version == "3")
+	{
+		FBH3DeltaTrans_t FBHDeltaTrans[FBHHeader.DeltaTransCount]<optimize=true>;
+		junkchar UnkSection[FBHHeader.ColCount * 4];
+	}
+};
+
+Header_t Header[1]<optimize=false>;
+FSeek(Header.ColDataOff);
+ColData_t ColData(Header)[Header.ColCount]<optimize=false>;
+FSeek(Header.FBHOff);
+FBHData_t FBHData[1]<optimize=true>;
+
+if (PrintInfo == 1)
+{
+	for (i = 0; i < Header.ColCount; i++)
+	{
+		Printf("%04i [0x%04X] %s\n", i, i, Header.ColNameList[i].Name);
+		Printf("\tColInfo @: [0x%08X]\n", Header.ColDataOff + i * 0x40);
+		Printf("\t\tPolyCount: %04i [0x%04X]\n", ColData[i].ColInfo.PolyCount, ColData[i].ColInfo.PolyCount);
+		Printf("\t\tPolyOff: %04i [0x%04X]\n", ColData[i].ColInfo.PolyOff, ColData[i].ColInfo.PolyOff);
+		Printf("\tPolyInfo @: [0x%08X]\n", Header.PolyDataOff + ColData[i].ColInfo.PolyOff * 0x20);
+		Printf("\tVtxBuffOff @: [0x%08X]\n", Header.VtxDataOff + ColData[i].PolyInfo[0].VtxOff * 0x10);
+		Printf("\n");
+	}
+}

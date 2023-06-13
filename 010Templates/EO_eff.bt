@@ -1,0 +1,57 @@
+//------------------------------------------------
+//--- 010 Editor v12.0.1 Binary Template
+//
+//      File: Endless Ocean .eff
+//   Authors: NiV
+//   Version: 0.1.3
+//   Purpose: Parsing the *.eff files from Endless Ocean
+//  Category: Endless Ocean Modding Experience
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+#include "EO_Utils.h"
+
+struct Sect2_t
+{
+	ushort Size<bgcolor=cBlue>;
+	junk16 unk1;
+	junk32 unk2;
+	junk32 unk3; //float
+	uint TextureIndex<bgcolor=cAqua>;
+	junkchar c[Size - 0x10];
+};
+
+struct Sect1_t
+{
+	PrintPos(" ");
+	uint Off<bgcolor=cPurple>;
+	junkchar c[0x30];
+	Vec3 Trans(cBlack, cGreen)[1]<optimize=false>;
+	Vec3 Scale(cBlack, cGreen)[1]<optimize=false>;
+	Vec4 RotQuat(cBlack, cGreen)[1]<optimize=false>;
+	Printf("%f %i\n", GetVec4Length(RotQuat), IsVec4Normalized(RotQuat));
+};
+
+struct CountsOffs_t
+{
+	uint unk1;
+	ushort CountSecondSect<bgcolor=cAqua>;
+	ushort CountFirstSect<bgcolor=cAqua>;
+	float unk2<bgcolor=cGreen>;
+	FSeek(FTell() + 0x20);
+	uint SecondSectOff<bgcolor=cPurple>;
+	uint FirstSectOff<bgcolor=cPurple>;
+};
+
+struct Header_t
+{
+	LittleEndian();
+	RFHeader_t RFHeader[1]<optimize=true>;
+	BigEndian();
+	CountsOffs_t Counts[1]<optimize=true>;
+};
+
+Header_t Header[1]<optimize=true>;
+Sect1_t Sect1[Header.Counts.CountFirstSect]<optimize=false>;
+Sect2_t Sect2[Header.Counts.CountSecondSect]<optimize=false>;
