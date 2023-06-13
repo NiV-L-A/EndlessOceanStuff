@@ -1,5 +1,0 @@
-@8000403c CallsMain
-@8005670c Main
-@801863a8 DecreaseAir
-@80068d20 GetPlayerEntityStruct
-@800c2070 GetAirLossRateFromDivingLevel (get current diving level, go to table, advance, get float)
