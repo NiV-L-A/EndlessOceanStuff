@@ -1,18 +1,18 @@
 //------------------------------------------------
 //--- 010 Editor v13.0.1 Binary Template
 //
-//      File: Endless Ocean param.dat
+//      File: Endless Ocean 2 param.dat
 //   Authors: NiV
-//   Version: 0.2
+//   Version: 0.3
 //   Purpose: Parsing the param.dat files from Endless Ocean 2
-//  Category: Endless Ocean Modding Experience
+//  Category: Settings
 // File Mask: 
 //  ID Bytes: FKF0
 //   History: 
 //------------------------------------------------
 
 /*
-50 params:
+50 params (there are more that are not in main.dol @0x52D4F0):
 COM VER CPL CFL
 SCO STM FLG SHT
 LEC LE1 PLC RAY
@@ -26,8 +26,65 @@ SCM SBM LCO DLM
 FLR GLW LWE SCP
 RCP SMD SBG SDR
 CLT FGC
+NC. BG.
 
-LAM, LDI, LEC = RGB (float) (val * 255) (entity colors?)
+Alphabetical:
+BG. CFL CL0 CL1
+CL2 CL3 CL4 CLT
+COM CPL DEP DLM
+FCV FGC FGF FGN
+FLG FLR GLW LA1
+LAM LCO LD1 LDI
+LE1 LEC LWE MSA
+MSC MSN MSS NC.
+PLC POS RAY RCP
+SBG SBL SBM SC0
+SC1 SC2 SC3 SC4
+SCM SCO SCP SDR
+SHT SMD STM VER
+
+Groups:
+SCO STM LCO COM
+BG. LWE LT.
+STP (b12land, STage Param?)
+
+STM's ProgIdx is 0 = day, 1 = night
+Before a LT0 there's always a LWE
+STM.LEC
+    if day = light effect color (wave reflection on ground)
+    if night = RGB for flashlight color
+
+LDI = RGB (float) (val * 255) (entity colors?)
+
+Abyss b11
+Between each BG there is a fade effect.
+STM.LEC = RGB for flashlight color
+STM.LAM = RGB for BG0.DEP (600)
+STM.LA1 = RGB for BG1.DEP (1500)
+STM.RAY = Brightness of rays
+BG0.DEP = Depth
+BG0.MSN = Marine Snow Number
+BG0.MSA = Marine Snow Alpha (brightness)
+BG0.FGN = Fog Near (0)
+BG0.FGF = Fog Far (300)
+BG0.CL0 = RGB for color that is above you
+BG0.CL1 = RGB for surround ball of light when you look up / above you?
+BG0.CL2 = RGB for color that is in front of you (a bit above)
+BG0.CL3 = RGB for color that is in front of you (a bit below)
+BG0.CL4 = RGB for color that is below you
+BG0.MSS = Marine Snow Size
+BG0.MSC = Marine Snow Color (RGB)
+
+private reef b28
+First pair of BG0 and BG1 = day
+Second pair of BG0 and BG1 = night
+LWE.SBL = RGBA for the water meeting the sand (when surfaced or ashore, "shoreline")
+LWE.SCP = Radius for how much it can render of the stage below when surfaced
+LT0.FGC = RGB for fog color on the mountains when you surface (day)
+LT2.FGC = RGB for fog color on the mountains when you surface (night)
+
+zahhab ashore b23
+LWE.SBL @ 80EFBCB0
 */
 
 local byte PrintInfo = true;
@@ -39,48 +96,48 @@ local ushort i = 0;
 
 struct Header_t
 {
-	if (ReadByte(0x05) == 0) //Only test stage and b12land
-		LittleEndian();
-	else
-		BigEndian();
-	char Magic[4]<bgcolor=cRed>;
-	byte unk1<bgcolor=cBlack, fgcolor=cRed>;
-	byte IsBigEndian<bgcolor=cRed>;
-	ushort unk2<bgcolor=cBlack, fgcolor=cRed>;
-	ushort ParamsCount<bgcolor=cAqua>;
-	ushort ChunksCount<bgcolor=cAqua>;
-	uint Size<bgcolor=cBlue>;
-	uint ParamsOff<bgcolor=cPurple>;
-	uint SizeCopy<bgcolor=cBlue>;
-	uint IdxOff<bgcolor=cPurple>;
+    if (ReadByte(0x05) == 0) // Only test stage and b12land
+        LittleEndian();
+    else
+        BigEndian();
+    char Magic[4]<bgcolor=cRed>;
+    byte unk1<bgcolor=cBlack, fgcolor=cRed>;
+    byte IsBigEndian<bgcolor=cRed>;
+    ushort unk2<bgcolor=cBlack, fgcolor=cRed>; // Version? Either 0x100 or 0x101 (no file uses 0x100)
+    ushort ParamsCount<bgcolor=cAqua>;
+    ushort ChunksCount<bgcolor=cAqua>;
+    uint Size<bgcolor=cBlue>;
+    uint ParamsOff<bgcolor=cPurple>;
+    uint SizeCopy<bgcolor=cBlue>;
+    uint IdxOff<bgcolor=cPurple>;
 };
 
 struct Param_t
 {
-	char Name[3]<bgcolor=cBlack, fgcolor=cSilver>;
-	ubyte ProgIdx<bgcolor=cBlack, fgcolor=cRed>;
+    char Name[3]<bgcolor=cBlack, fgcolor=cSilver>;
+    ubyte ProgIdx<bgcolor=cBlack, fgcolor=cAqua>; // Used for distinguishing RGB (0 = Red, 1 = Green, 2 = Blue)
 	local byte TempType = Types[i].Type;
-	if (TempType == 0x04) //most common - float
-		float Value<bgcolor=cBlack, fgcolor=FloatCol>;
-	else if (TempType == 0x00) //less common - group/collection
-		uint Value<bgcolor=cWhite, fgcolor=GroupCol>;
-	else if (TempType == 0x03) //rare - flag, uint
-		uint Value<bgcolor=cBlack, fgcolor=UIntCol>;
-	else //if (LType == 0x02) //rarest
-		uint Value<bgcolor=cBlack, fgcolor=RareCol>;
+    if (TempType == 0x04) // most common - float
+        float Value<bgcolor=cBlack, fgcolor=FloatCol>;
+    else if (TempType == 0x00) // less common - group/collection
+        uint Value<bgcolor=cWhite, fgcolor=GroupCol>;
+    else if (TempType == 0x03) // rare - flag, uint
+        uint Value<bgcolor=cBlack, fgcolor=UIntCol>;
+    else // if (LType == 0x02) // rarest
+        uint Value<bgcolor=cBlack, fgcolor=RareCol>;
 	i += 1;
 };
 
 struct Types_t
 {
-	if (ReadByte() == 0x04) //most common - float
-		ubyte Type<bgcolor=cBlack, fgcolor=FloatCol>;
-	else if (ReadByte() == 0x00) //less common - group/collection
-		ubyte Type<bgcolor=cWhite, fgcolor=GroupCol>;
-	else if (ReadByte() == 0x03) //rare - flag, uint
-		ubyte Type<bgcolor=cBlack, fgcolor=UIntCol>;
-	else //if (ReadByte() == 0x02) //rarest
-		ubyte Type<bgcolor=cBlack, fgcolor=RareCol>;
+    if (ReadByte() == 0x04) // most common - float
+        ubyte Type<bgcolor=cBlack, fgcolor=FloatCol>;
+    else if (ReadByte() == 0x00) // less common - group/collection
+        ubyte Type<bgcolor=cWhite, fgcolor=GroupCol>;
+    else if (ReadByte() == 0x03) // rare - flag, uint
+        ubyte Type<bgcolor=cBlack, fgcolor=UIntCol>;
+    else // if (ReadByte() == 0x02) // rarest
+        ubyte Type<bgcolor=cBlack, fgcolor=RareCol>;
 };
 
 //
@@ -102,16 +159,16 @@ if (PrintInfo == 1)
 	Printf("\tName | Type | ProgIdx | Value * 255 | Value\n\n");
 	for (i = 0; i < Header.ChunksCount; i++)
 	{
-		Printf("%s | %01X | %04X | %04X | %08X\n", Params[j].Name, Types[j].Type, j, Params[j].Value, TMP);
-		for (k = 0; k < Params[j].Value; k++)
-		{
+    	Printf("%s | %01X | %04X | %04X | %08X\n", Params[j].Name, Params[j].ProgIdx, j, Params[j].Value, TMP);
+    	for (k = 0; k < Params[j].Value; k++)
+    	{
 			Printf("\t%s | %01X | %01X | ", Params[k+1+j].Name, Types[k+1+j].Type, Params[k+1+j].ProgIdx);
-			if (Types[k+1+j].Type == 0x04) //float
-				Printf("[%08X] | %f\n", Params[k+1+j].Value * 255, Params[k+1+j].Value);
-			else /*if (Indices[k+1+j].Index == 0x03) //uint*/
-				Printf("[%08X] | %d\n", Params[k+1+j].Value, Params[k+1+j].Value);
-		}
-		TMP += (Params[j].Value + 1) * 8;
-		j += (Params[j].Value + 1);
+        	if (Types[k+1+j].Type == 0x04) // float
+            	Printf("[%08X] | %f\n", Params[k+1+j].Value * 255, Params[k+1+j].Value);
+        	else /*if (Indices[k+1+j].Index == 0x03) //uint*/
+            	Printf("[%08X] | %d\n", Params[k+1+j].Value, Params[k+1+j].Value);
+    	}
+    	TMP += (Params[j].Value + 1) * 8;
+    	j += (Params[j].Value + 1);
 	}
 }
