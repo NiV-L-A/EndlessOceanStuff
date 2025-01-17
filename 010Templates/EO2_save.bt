@@ -1,0 +1,917 @@
+//------------------------------------------------
+//--- 010 Editor v15.0.1 Binary Template
+//
+//      File: Endless Ocean 2 save file (charN.dat)
+//   Authors: NiV
+//   Version: 1.0.0
+//   Purpose: Parsing the char*.dat save file from Endless Ocean 2
+//  Category: Save data
+// File Mask: 
+//  ID Bytes: 
+//   History: 
+//------------------------------------------------
+/*
+8-Bit Signed Integer - char, byte, CHAR, BYTE
+8-Bit Unsigned Integer - uchar, ubyte, UCHAR, UBYTE
+16-Bit Signed Integer - short, int16, SHORT, INT16
+16-Bit Unsigned Integer - ushort, uint16, USHORT, UINT16, WORD
+32-Bit Signed Integer - int, int32, long, INT, INT32, LONG
+32-Bit Unsigned Integer - uint, uint32, ulong, UINT, UINT32, ULONG, DWORD
+64-Bit Signed Integer - int64, quad, QUAD, INT64, __int64
+64-Bit Unsigned Integer - uint64, uquad, UQUAD, UINT64, QWORD, __uint64
+32-Bit Floating Point Number - float, FLOAT
+64-Bit Floating Point Number - double, DOUBLE
+16-Bit Floating Point Number - hfloat, HFLOAT
+Date Types - DOSDATE, DOSTIME, FILETIME, OLETIME, time_t, time64_t
+cBlack - 0x000000
+cRed - 0x0000ff
+cDkRed - 0x000080
+cLtRed - 0x8080ff
+cGreen - 0x00ff00
+cDkGreen - 0x008000
+cLtGreen - 0x80ff80
+cBlue - 0xff0000
+cDkBlue - 0x800000
+cLtBlue - 0xff8080
+cPurple - 0xff00ff
+cDkPurple - 0x800080
+cLtPurple - 0xffe0ff
+cAqua - 0xffff00
+cDkAqua - 0x808000
+cLtAqua - 0xffffe0
+cYellow - 0x00ffff
+cDkYellow - 0x008080
+cLtYellow - 0x80ffff
+cDkGray - 0x404040
+cGray - 0x808080,
+cSilver - 0xc0c0c0,
+cLtGray - 0xe0e0e0
+cWhite - 0xffffff
+cNone - 0xffffffff
+*/
+
+/*
+Fields at 0x0 and 0x22 must be adjusted according to the data.
+First 4 bytes is equal to the sum of every 4 bytes in the file, starting from @0x4, read as uint.
+@0x3F data start
+@0x20 short, encryption key. To decrypt, every 2 bytes from data - this field.
+@0x22 short, the sum of every decrypted 2 bytes, starting from 0x3F. At the end: sum & 0xFFFF. Read as ushort.
+0xEE: 0x8->veiwed hairstyle guide
+0x10C: 0xFF: no flags
+-> 0xFE: oceana has bonus for filling in the whole map
+-> 0xFD: oceana has a reward for your good cartography work
+
+*/
+
+// 0xDC: 0b00010000: surfacing->pre-surfacing
+// 0xDC: 0b00100000: surfacing->post-surfacing
+// 0xFE: 0b00010000: aquarium opened for public
+
+BigEndian();
+typedef ubyte junk8<hidden=true,fgcolor=cRed,bgcolor=cBlack>;
+typedef ushort junk16<hidden=true,fgcolor=cRed,bgcolor=cBlack>;
+typedef uint junk32<hidden=true,fgcolor=cRed,bgcolor=cBlack>;
+typedef char junkchar<hidden=true,fgcolor=cRed,bgcolor=cBlack>;
+
+local int i = 0;
+local uint var1 = 0;
+local ushort var2 = 0;
+local ushort Key = ReadUShort(0x20);
+
+uint HexStringToUInt(string hexString)
+{
+    local int result = 0;
+    local int len = Strlen(hexString);
+    local int j = 0;
+    local char c;
+    local uint digitValue;
+    for (j = 0; j < len; j++)
+    {
+        c = hexString[j];
+        if (c >= '0' && c <= '9')
+            digitValue = c - '0';
+        else if (c >= 'A' && c <= 'F')
+            digitValue = c - 'A' + 10;
+        else if (c >= 'a' && c <= 'f')
+            digitValue = c - 'a' + 10;
+
+        result = result * 16 + digitValue;
+    }
+    return result;
+}
+
+uint CalculateCheckSum1()
+{
+    FSeek(0x4);
+    local uint sum = 0;
+    // 1383 = (FileSize() / 4) - 1 = (0x15A0 / 4) - 1
+    for (i = 0; i < 1383; i++)
+    {
+        var1 = ReadUInt();
+        // Printf("[%08X] %08X | %08X\n", FTell(), var1, sum);
+        FSkip(0x4);
+        sum += var1;
+    }
+    return sum;
+}
+
+uint CalculateCheckSum2()
+{
+    FSeek(0x3F);
+    local uint sum = 0;
+    for (i = 0; i < 2736; i++)
+    {
+        var2 = ReadUShort();
+        var2 = var2 - Key;
+        sum += var2;
+        FSkip(0x2);
+    }
+    sum = sum & 0xFFFF;
+    return sum;
+}
+
+// Run this on an encrypted file
+void DumpDecryptedData()
+{
+    Printf("%08X", ReadInt(0x0));
+    Printf("00000025000000000000000000000000000000000000000000000000");
+    Printf("%04X%04X", ReadUShort(0x20), ReadUShort(0x22));
+    Printf("000000000000000000000000000000000000000000000000");
+    local string out = "000000";
+    
+    FSeek(0x3F);
+    for (i = 0; i < 2736; i++)
+    {
+        var2 = ReadUShort();
+        var2 = var2 - Key;
+        out += Str("%04X", var2);
+        FSkip(0x2);
+    }
+    out += "00";
+    Printf(out);
+    Printf("\n");
+}
+
+// Run this on a decrypted file
+void DumpEncryptedData()
+{
+    FSeek(0x3F);
+    local uint CheckSum2 = 0;
+    for (i = 0; i < 2736; i++)
+    {
+        var2 = ReadUShort();
+        CheckSum2 = CheckSum2 + var2;
+        FSkip(0x2);
+    }
+    CheckSum2 = CheckSum2 & 0xFFFF;
+
+    FSeek(0x3F);
+    local string out = "000000";
+    for (i = 0; i < 2736; i++)
+    {
+        var2 = ReadUShort();
+        var2 = var2 + Key;
+        out += Str("%04X", var2);
+        FSkip(0x2);
+    }
+    out += "00";
+
+    local uint CheckSum1 = 0x25 + (Key * 0x10000) + CheckSum2;
+    local string q = "";
+    local uint w = 0;
+    for (i = 0; i < 1369; i++)
+    {
+        q = SubStr(out, i * 8, 8);
+        w = HexStringToUInt(q);
+        CheckSum1 += w;
+    }
+    // Printf("%s\t%08X\t%08X\n", q, w, CheckSum1);
+
+    Printf("%08X", CheckSum1);
+    Printf("00000025000000000000000000000000000000000000000000000000");
+    Printf("%04X%04X", Key, CheckSum2);
+    Printf("000000000000000000000000000000000000000000000000");
+    Printf(out);
+    Printf("\n");
+}
+
+struct Header_t
+{
+    int Checksum1<bgcolor=cRed>;
+    int Always25<bgcolor=cBlack, fgcolor=cRed>;
+    junkchar junk1[0x18];
+    short Key<bgcolor=cBlue>;
+    short Checksum2<bgcolor=cRed>;
+    junkchar junk2[0x1C]<bgcolor=cBlack, fgcolor=cRed>;
+};
+
+/*
+Bottlenose
+Orca
+Short-beaked common dolphin
+Beluga
+Pacific white-sided dolphin
+Commerson's dolphin
+False killer whale
+Risso's dolphin
+Narwhal
+Amazon river dolphin
+Spectacled porpoise
+*/
+struct Dolphin_t
+{
+/*
+Jump/Flip
+Backflip
+Spin Jump
+Sing
+Wave
+Tail Walk
+
+Jump/Flip (1) is always there!
+
+UnlockedTrickFlags1:
+    0b10000000 = ?
+    0b01000000 = ?
+    0b00100000 = ?
+    0b00010000 = ?
+    0b00001000 = ?
+    0b00000100 = ?
+    0b00000010 = ?
+    0b00000001 = Special Trick: Water Blossom (Backflip (Spectacled Porpoise))
+
+UnlockedTrickFlags2:
+    0b10000000 = Special Trick: Pororoca (Tail Walk (Amazon River Dolphin))
+    0b01000000 = Special Trick: Unicorn Drill (Spin Jump (Narwhal))
+    0b00100000 = Special Trick: Merry-Go-Round (Wave (Risso's Dolphin))
+    0b00010000 = Special Trick: Black Vortex (Jump/Flip (False Killer Whale))
+    0b00001000 = Special Trick: Legend of the Sea (Spin Jump (Commerson's))
+    0b00000100 = Special Trick: Spiral Sickle (Jump/Flip (Pacific White-Sided))
+    0b00000010 = Special Trick: Recital (Sing (Beluga))
+    0b00000001 = Special Trick: Fly To the Stars (Spin Jump (Short-Beaked Common))
+
+UnlockedTrickFlags3:
+    0b10000000 = Special Trick: Thunder Cyclone (Jump/Flip (Orca))
+    0b01000000 = Special Trick: Blue Moon-Sault (Backflip (Bottlenose))
+    0b00100000 = Sing (3)
+    0b00010000 = Sing (2)
+    0b00001000 = Spin Jump (3) (Corkscrew)
+    0b00000100 = Spin Jump (2) (High Spin Jump)
+    0b00000010 = Backflip (3) (Super Backflip)
+    0b00000001 = Backfilp (2) (Big Backflip)
+
+UnlockedTrickFlags4:
+    0b10000000 = Jump/Flip (3) (Super Flip Jump)
+    0b01000000 = Jump/Flip (2) (Flip Jump)
+    0b00100000 = Wave (1)
+    0b00010000 = Tail Walk (1)
+    0b00001000 = Sing (1)
+    0b00000100 = Backflip (1)
+    0b00000010 = Spin Jump (1)
+    0b00000001 = ?
+
+Record are values displayed when choosing the dolphin
+When a new record happens, both Record and RecordToday gets updated to the same value
+
+NOTE:
+Sometimes the game does nothing to the values! Doesn't increment, doesn't decrement.
+
+Algorithm for a trick:
+    Increment the TrickLevel field by 1
+        If Progress is 0, cap TrickLevel at 20 included (20 can be reached at Progress 0)
+        If Progress is 1, cap TrickLevel at 70 included (70 can be reached at Progress 1)
+        If Progress is 2, cap TrickLevel at 99 included (99 can be reached at Progress 2)
+    If TrickLevelProgress is < 10
+        Increment TrickLevelProgress by 1
+    Decrement Condition by 1
+
+Algorithm for a day that passes:
+    Set Condition to 49 (0x31)
+    Set the TrickLevelProgress fields to 0
+    Set the RecordToday fields to -1
+
+Algorithm for giving food to dolphin:
+    If Condition is < 99, increment Condition by 1
+    If dolphin just asked for food, increment Condition by 2
+    If Condition is > 99, set Condition to 99
+
+new Tricks unlock ("It learned a new trick"):
+    dolphin starts with 1 Trick, jump/flip
+    sum of TrickLevel fields = 1 -> unlock sing
+    sum of TrickLevel fields = 4 -> unlock backflip
+    sum of TrickLevel fields = 12 -> unlock wave
+    sum of TrickLevel fields = 20 -> unlock spin jump
+    sum of TrickLevel fields = 30 -> unlock tail walk
+
+"It wants to try out a new trick"
+    TrickLevel field of the most recent Trick is +1 of the previous Progress' cap
+
+"It's really pumped", the next trick will:
+    Increment TrickLevel field by 2
+    Increment TrickLevelProgress field by 2
+    Increment Condition by 2 or Decrement Condition by 1
+    
+"It has mastered the trick",
+    the TrickLevel field reached the current Progress' cap
+    This means that there is a chance of a level up request appearing
+
+"Absolute max", TrickLevel reached 99
+
+Oceane says "I don't think this trick can get any better"
+    TrickLevelProgress field has reached 10.
+        Make a day pass so TrickLevelProgress values reset
+    Or TrickLevel field has reached the current Progress' cap
+        This means that there is a chance of a level up request appearing
+
+"It wants to try out a new trick"
+    TrickLevel field is > current Progress' cap.
+    If the new trick is peformed, then a new UnlockTrickFlags bit will flip.
+
+TrickRecord in meters and seconds
+
+Condition:
+x < 0 = bad mood
+0 <= x <= 20 = bad mood
+21 <= x <= 70 = OK
+71 <= x <= 127 = Cheerful
+*/
+    byte UnlockedTrickFlags1<bgcolor=cRed>;
+    byte UnlockedTrickFlags2<bgcolor=cRed>;
+    byte UnlockedTrickFlags3<bgcolor=cRed>;
+    byte UnlockedTrickFlags4<bgcolor=cRed>;
+    float JumpFlipRecord<bgcolor=cGreen>;
+    float SpinJumpRecord<bgcolor=cGreen>;
+    float BackflipRecord<bgcolor=cGreen>;
+    float SingingRecord<bgcolor=cGreen>;
+    float TailWalkRecord<bgcolor=cGreen>;
+    float WaveRecord<bgcolor=cGreen>;
+
+    float JumpFlipRecordToday<bgcolor=cDkGreen>;
+    float SpinJumpRecordToday<bgcolor=cDkGreen>;
+    float BackflipRecordToday<bgcolor=cDkGreen>;
+    float SingingRecordToday<bgcolor=cDkGreen>;
+    float TailWalkRecordToday<bgcolor=cDkGreen>;
+    float WaveRecordToday<bgcolor=cDkGreen>;
+
+    char Name[0x10]<bgcolor=cSilver>;
+    byte unk1[0x2]<bgcolor=cBlack, fgcolor=cRed>;
+    byte Progress<bgcolor=cAqua>; // From 0 to 2. String id table at 8059a440.
+    byte Condition<bgcolor=cAqua>; // cap at 99. Default at 49.
+    byte unk2[0x3]<bgcolor=cBlack, fgcolor=cRed>;
+
+    // Favorite trick is the highest of these:
+    byte JumpFlipLevel<bgcolor=cAqua>;
+    byte SpinJumpLevel<bgcolor=cAqua>;
+    byte BackflipLevel<bgcolor=cAqua>;
+    byte SingingLevel<bgcolor=cAqua>;
+    byte TailWalkLevel<bgcolor=cAqua>;
+    byte WaveLevel<bgcolor=cAqua>;
+
+    byte JumpFlipLevelProgressToday<bgcolor=cAqua>;
+    byte SpinJumpLevelProgressToday<bgcolor=cAqua>;
+    byte BackflipLevelProgressToday<bgcolor=cAqua>;
+    byte SingingLevelProgressToday<bgcolor=cAqua>;
+    byte TailWalkLevelProgressToday<bgcolor=cAqua>;
+    byte WaveLevelProgressToday<bgcolor=cAqua>;
+
+    byte IsBefriended<bgcolor=cLtBlue>;
+};
+
+// 0 - 20 or 128 - 255 = 0
+// 21 - 46 = 1
+// 47 - 127 = 2
+
+struct RequestTour_t
+{
+    ushort DaysLeft<bgcolor=cRed>;
+    ushort ClientID<bgcolor=cAqua>;
+    byte Flag<bgcolor=cAqua>;
+    junk8 unk1;
+    ushort Reward<bgcolor=cAqua>;
+    int Map<bgcolor=cAqua>;
+};
+
+struct RequestSalvage_t
+{
+    ushort DaysLeft<bgcolor=cRed>;
+    ushort ClientID<bgcolor=cAqua>;
+    ushort Wait<bgcolor=cAqua>; // ?
+    ushort Reward<bgcolor=cAqua>;
+    int Map<bgcolor=cAqua>;
+    ushort LocationID<bgcolor=cAqua>;
+    byte Item1<bgcolor=cAqua>;
+    byte Item2<bgcolor=cAqua>;
+    junk32 unk1;
+};
+
+struct RequestPhoto_t
+{
+    ushort DaysLeft<bgcolor=cRed>;
+    junk32 unk1;
+    ushort Reward<bgcolor=cAqua>;
+    byte ClientID<bgcolor=cAqua>;
+    byte Type<bgcolor=cAqua>; // 0/1 Creature, 2 Landmark, 3 Person
+    junk16 Flag; // ?
+    char Target1[4]<bgcolor=cSilver>;
+    char Target2[4]<bgcolor=cSilver>; // ?
+};
+
+struct RequestDolphin_t
+{
+/*
+802146f0
+At least 1 TrickLevel
+If TrickLevel > 70
+    return 0 // do not set a request
+If TrickLevel > 59 && Level < 2
+    return 12 // set a request for level 2
+If TrickLevel > 19 && Level < 1
+    return 1 // set a request for level 1
+
+If Dolphin's Level == 0
+     LevelUpID = DolphinID + 1
+If Dolphin's Level == 1
+     LevelUpID = DolphinID + 12
+
+Type
+    0 = Level Certificate
+        Ignore ClientID, always Hayako Sakurai (0x24)
+    1 = Dolphin-Show Award
+
+
+(1 + DolphinID = LevelUpID), DolphinID = Name
+Lv2:
+(1 + 0 = 1), 0 = bottlenose
+(1 + 1 = 2), 1 = orca
+(1 + 2 = 3), 2 = short beak
+(1 + 3 = 4), 3 = Beluga
+(1 + 4 = 5), 4 = pacific white sided
+(1 + 5 = 6), 5 = commerson's
+(1 + 6 = 7), 6 = false killer whale
+(1 + 7 = 8), 7 = risso's dolphin
+(1 + 8 = 9), 8 = narwhal
+(1 + 9 = 10), 9 = amazon river
+(1 + 10 = 11), 10 = spectacled porpoise
+
+Lv3:
+(12 + 0 = 12), 0 = bottlenose
+(12 + 1 = 13), 1 = orca
+(12 + 2 = 14), 2 = short beak
+(12 + 3 = 15), 3 = Beluga
+(12 + 4 = 16), 4 = pacific white sided
+(12 + 5 = 17), 5 = commerson's
+(12 + 6 = 18), 6 = false killer whale
+(12 + 7 = 19), 7 = risso's dolphin
+(12 + 8 = 20), 8 = narwhal
+(12 + 9 = 21), 9 = amazon river
+(12 + 10 = 22), 10 = spectacled porpoise
+*/
+    ushort DaysLeft<bgcolor=cRed>;
+    ushort ClientID<bgcolor=cAqua>;
+    byte LevelUpID<bgcolor=cAqua>;
+    junk8 unk1;
+    ushort Reward<bgcolor=cAqua>;
+    byte Type<bgcolor=cAqua>;
+    byte DolphinID<bgcolor=cAqua>;
+    junkchar unk2[0x2];
+};
+
+struct ExploredMap_t
+{
+    // The Unk maps are memcopied from the Saved ones when Oceana gives you the pelagos for completing the maps
+    byte GatamaSaved[0x20]<bgcolor=cDkBlue>;
+    byte GatamaUpdate[0x20]<bgcolor=cDkBlue>;
+    junkchar GatamaUnk[0x20];
+    byte CicerosSaved[0x20]<bgcolor=cDkBlue>;
+    byte CicerosUpdate[0x20]<bgcolor=cDkBlue>;
+    junkchar CicerosUnk[0x20];
+    byte ZahhabSaved[0x20]<bgcolor=cDkBlue>;
+    byte ZahhabUpdate[0x20]<bgcolor=cDkBlue>;
+    junkchar ZahhabUnk[0x20];
+    byte DeepHoleSaved[0x8]<bgcolor=cDkBlue>;
+    byte DeepHoleUpdate[0x8]<bgcolor=cDkBlue>;
+    junkchar DeepHoleUnk[0x8];
+    byte ValkaSaved[0x8]<bgcolor=cDkBlue>;
+    byte ValkaUpdate[0x8]<bgcolor=cDkBlue>;
+    junkchar ValkaUnk[0x8];
+    byte AbyssSaved[0x8]<bgcolor=cDkBlue>;
+    byte AbyssUpdate[0x8]<bgcolor=cDkBlue>;
+    junkchar AbyssUnk[0x8];
+    byte GodSaved[0x8]<bgcolor=cDkBlue>;
+    byte GodUpdate[0x8]<bgcolor=cDkBlue>;
+    junkchar GodUnk[0x8];
+    byte WeddellSaved[0x8]<bgcolor=cDkBlue>;
+    byte WeddellUpdate[0x8]<bgcolor=cDkBlue>;
+    junkchar WeddellUnk[0x8];
+    byte IcebergSaved[0x8]<bgcolor=cDkBlue>;
+    byte IcebergUpdate[0x8]<bgcolor=cDkBlue>;
+    junkchar IcebergUnk[0x8];
+    byte CanadaSaved[0x8]<bgcolor=cDkBlue>;
+    byte CanadaUpdate[0x8]<bgcolor=cDkBlue>;
+    junkchar CanadaUnk[0x8];
+    byte CorticaMidSaved[0x8]<bgcolor=cDkBlue>;
+    byte CorticaMidUpdate[0x8]<bgcolor=cDkBlue>;
+    junkchar CorticaMidUnk[0x8];
+    byte CorticaUpSaved[0x8]<bgcolor=cDkBlue>;
+    byte CorticaUpUpdate[0x8]<bgcolor=cDkBlue>;
+    junkchar CorticaUpUnk[0x8];
+    junkchar UnusedMaps[0x288]; // 27 unused maps. 0x18 (stride) * 27
+};
+
+struct CustomSuit_t
+{
+    junk8 unk1;
+    byte Sex<bgcolor=cAqua>;
+    byte Id<bgcolor=cRed>;
+    // Blue, Red, Yellow, Dark green, Azure, Orange, Green, Pink, Purple, Gray, Black, White
+    byte CustomSuitColorId[3]<bgcolor=cAqua>;
+    junk16 unk3;
+};
+
+struct Gear_t
+{
+/*
+character's featuers
+PAL: Pale
+NTSC: Fair
+PAL: with gentle features, with strong features
+NTSC: With fine features, With pronounced features
+Male
+    Pale
+        with gentle features c00d0161.tdl 00 00 00 00 | 00 00 00 01 | 00 00 05 01
+        with strong features c00d0160.tdl 00 00 00 00 | 00 00 00 00 | 00 00 05 01
+    Medium
+        with gentle features c00d0162.tdl 00 00 00 02 | 00 00 00 00 | 00 00 05 01
+        with strong features c00d0163.tdl 00 00 00 02 | 00 00 00 01 | 00 00 05 01
+    Dark
+        with gentle features c00d0164.tdl 00 00 00 01 | 00 00 00 00 | 00 00 05 01
+        with strong features c00d0165.tdl 00 00 00 01 | 00 00 00 01 | 00 00 05 01
+Female
+    Pale
+        with gentle features c00d0171.tdl
+        with strong features c00d0170.tdl
+    Medium
+        with gentle features c00d0172.tdl
+        with strong features c00d0173.tdl
+    Dark
+        with gentle features c00d0174.tdl
+        with strong features c00d0175.tdl
+*/
+    int Sex2<bgcolor=cAqua>;
+    int SkinTone<bgcolor=cAqua>; // 0 pale, 1 dark, 2 medium
+    junkchar unk1[3];
+    byte FaceFeatures<bgcolor=cAqua>; // Pale: 1 gentle, 0 strong. Dark and medium: 0 gentle, 1 strong.
+    junkchar unk2[2];
+    byte HairstyleType<bgcolor=cAqua>;
+    byte HairstyleColor<bgcolor=cAqua>;
+    // bits 0 - 3: CustomSuitId
+    // bits 4...: CustomSuitColorId
+    int CustomSuitColor<bgcolor=cAqua>;
+    int Suit<bgcolor=cAqua>;
+    int Body<bgcolor=cAqua>;
+    junk32 unk3;
+    junk32 unk4;
+    int Goggles<bgcolor=cAqua>;
+    int BCD<bgcolor=cAqua>;
+    int Tank<bgcolor=cAqua>;
+    int Fins<bgcolor=cAqua>;
+    int Gloves<bgcolor=cAqua>;
+    int Boots<bgcolor=cAqua>;
+    CustomSuit_t SelectedCustomSuit[1];
+    CustomSuit_t CustomSuit[5];
+    ushort EquipCustomSuitID<bgcolor=cAqua>;
+    // Each bit gets set to 1 when an hairstyle has been equipped for the first time.
+    ushort HairstylesTried<bgcolor=cAqua>;
+};
+
+
+
+// List at 0x59D258 in main.dol
+struct AquariumPlace_t
+{
+    ushort CreatureID<bgcolor=cAqua>;
+    byte GridPosition<bgcolor=cAqua>;
+    junk8 unk1;
+};
+
+struct Ency_t
+{
+    // 0b00001000 = found
+    // 0b00000100 = new
+    // 0b00000010 = trivia
+    // some bit related to "new" for the aquarium placement
+    // @1543 Thanatos
+    // @1525 Cacao Maharaja
+    // @13DD Sea serpent, needs 0b00010000 @108. Gets set to 1 after the fade-in from the "I do" in the last scene of the sea serpent event
+    // @13DF Anomalocaris, needs 0b00000010 @10F. Gets set to 1 after the fade-in from the title acknowledgment in the last scene of the anomalocaris event
+    // @13E1 Cameroceras, needs 0b10000000 @108 Gets set to 1 after the fade-in from the title acknowledgment in the last scene of the cameroceras event
+    // Follows list in lifeinfo   
+    // It's actually read as a short
+    junk8 unk1;
+    byte Flags;
+    // Printf("[%03d] [%02X] %s\n", i, flag, IntToBinaryStr(flag));
+    i++;
+    //Printf("%02X %02X ", unk1, (flag | 0b1110));
+};
+
+struct Records_t
+{
+    int TotalAirUsed<bgcolor=cBlue>; // Can go negative
+    int RanOutOfAir<bgcolor=cBlue>;
+    int GaveFood<bgcolor=cBlue>;
+    int TouchedAnimals<bgcolor=cBlue>;
+    int TookPhotos<bgcolor=cBlue>;
+    int UsedSeaWhistle<bgcolor=cBlue>;
+    int CuredPulsar<bgcolor=cBlue>;
+    int FocusedOnAnimal<bgcolor=cBlue>;
+    int UsedZoomMode<bgcolor=cBlue>;
+    int TalkedWhileDiving<bgcolor=cBlue>;
+    int GrabbedAnimal<bgcolor=cBlue>;
+    int NightDiving<bgcolor=cBlue>;
+    int UsedAutoSwim<bgcolor=cBlue>;
+    int AttackedByDangerAnimal<bgcolor=cBlue>;
+    int SalvagedItems<bgcolor=cBlue>;
+    int AskedNancy<bgcolor=cBlue>;
+    int CalledNancy<bgcolor=cBlue>;
+    int ChangedHair<bgcolor=cBlue>;
+    int GuidedTours<bgcolor=cBlue>;
+    int SalvageRequest<bgcolor=cBlue>;
+    int DolphinShow<bgcolor=cBlue>;
+    int PhotoRequest<bgcolor=cBlue>;
+    int PhotoPublish<bgcolor=cBlue>;
+    int DiveOceanaCount<bgcolor=cBlue>;
+    int DiveGGCount<bgcolor=cBlue>;
+    int DiveHayakoCount<bgcolor=cBlue>;
+    int DiveDlphBottlenoseCount<bgcolor=cBlue>;
+    int DiveDlphOrcaCount<bgcolor=cBlue>;
+    int DiveDlphShortBeakCount<bgcolor=cBlue>;
+    int DiveDlphBelugaCount<bgcolor=cBlue>;
+    int DiveDlphWhiteSidedCount<bgcolor=cBlue>;
+    int DiveDlphCommersonCount<bgcolor=cBlue>;
+    int DiveDlphFalseKillerCount<bgcolor=cBlue>;
+    int DiveDlphRissoCount<bgcolor=cBlue>;
+    int DiveDlphNarwhal<bgcolor=cBlue>;
+    int DiveDlphAmazonRiverCount<bgcolor=cBlue>;
+    int DiveDlphSpecPropCount<bgcolor=cBlue>;
+    int TrainDlphBottlenoseCount<bgcolor=cBlue>;
+    int TrainDlphOrcaCount<bgcolor=cBlue>;
+    int TrainDlphShortBeakCount<bgcolor=cBlue>;
+    int TrainDlphBelugaCount<bgcolor=cBlue>;
+    int TrainDlphWhiteSidedCount<bgcolor=cBlue>;
+    int TrainDlphCommersonCount<bgcolor=cBlue>;
+    int TrainDlphFalseKillerCount<bgcolor=cBlue>;
+    int TrainDlphRissoCount<bgcolor=cBlue>;
+    int TrainDlphNarwhalCount<bgcolor=cBlue>;
+    int TrainDlphAmazonRiverCount<bgcolor=cBlue>;
+    int TrainDlphSpecPropCount<bgcolor=cBlue>;
+    int TrainDlphPartnerCount<bgcolor=cBlue>;
+    int LeftNineballCount<bgcolor=cBlue>;
+    int UseCabinCount<bgcolor=cBlue>;
+    int ChangeClothesCount<bgcolor=cBlue>;
+    int DecorItems<bgcolor=cBlue>;
+    int GatamaCount<bgcolor=cBlue>;
+    int DeepHoleCount<bgcolor=cBlue>;
+    int CicerosCount<bgcolor=cBlue>;
+    int ValkaCount<bgcolor=cBlue>;
+    int CanadaCount<bgcolor=cBlue>;
+    int WeddellCount<bgcolor=cBlue>;
+    int IcebergCount<bgcolor=cBlue>;
+    int CorticaMidCount<bgcolor=cBlue>;
+    int CorticaUpCount<bgcolor=cBlue>;
+    int ZahhabCount<bgcolor=cBlue>;
+    int AbyssCount<bgcolor=cBlue>;
+    int CotgCount<bgcolor=cBlue>;
+    int ReefCount<bgcolor=cBlue>;
+    int WentAshoreCount<bgcolor=cBlue>;
+    int PlacedInAquaCount<bgcolor=cBlue>;
+    int AquaVisitorsCount<bgcolor=cBlue>; // Can go negative
+    int WorkedOnReefCount<bgcolor=cBlue>;
+    int ReleasedFromReefCount<bgcolor=cBlue>; // Can go negative
+    int PlayedWithFriendCount<bgcolor=cBlue>;
+    int SavedCount<bgcolor=cBlue>;
+    // Stored as decimeters
+    // Game does miles = 0.62099999 * (number / 10000)
+    float TotalDistanceTraveled<bgcolor=cGreen>;
+    float DistanceWalkedNineball<bgcolor=cGreen>;
+    // DiveTime, Pen and Sensor are like this:
+    // Hours capped at 9999999
+    // "Min" are in seconds and are capped at 3599
+    // Every 3600: Hour += 1 and set Min to 0
+    // If TotalHour is 9999999 and TotalMin is > 3599, set TotalMin to 3540 (-60 seconds and goes in a loop)
+    // This means that the max number of seconds is 35999999999
+    int TotalDiveTimeHour<bgcolor=cBlue>;
+    float TotalDiveTimeMin<bgcolor=cGreen>;
+    int UsedPenHour<bgcolor=cBlue>;
+    float UsedPenMin<bgcolor=cGreen>;
+    int UsedSensorHour<bgcolor=cBlue>;
+    float UsedSensorMin<bgcolor=cGreen>;
+/*
+8 bytes, not really read as a normal 8 bytes integer:
+if firstValue > 0
+    printf("%d%06d", firstValue, secondValue)
+else
+    Format: printf("%d", secondValue)
+for every secondValue 1'000'000, adds 1 to firstValue
+limit to "9999" + "999999" (10 digits)
+example:
+    target number is 123'456'789
+    add leading 0s so it's 10 digits -> 0123'456'789
+    last 6 digits: 456'789 = secondValue (0x6F855)
+    first 4 digits: 0123 = 123 = firstValue (0x7B)
+
+    target number is 9'999'999'999
+    add leading 0s so it's 10 digits -> 9'999'999'999 (nothing changed, already 10 digits)
+    last 6 digits: 999'999 = secondValue (0xF423F)
+    first 4 digits: 9'999 = firstValue (0x270f)
+
+    1'000'000
+*/
+    int TotalPelagosEarned1<bgcolor=cBlue>;
+    int TotalPelagosEarned2<bgcolor=cBlue>;
+    int TotalPelagosSpent1<bgcolor=cBlue>;
+    int TotalPelagosSpent2<bgcolor=cBlue>;
+    int TotalValueItemsAppraised1<bgcolor=cBlue>;
+    int TotalValueItemsAppraised2<bgcolor=cBlue>;
+    int TotalPelagosEarnedRequest1<bgcolor=cBlue>;
+    int TotalPelagosEarnedRequest2<bgcolor=cBlue>;
+};
+
+struct Aquarium_t
+{
+    AquariumPlace_t AquariumPlaceMainTank[16]<optimize=true>;
+    // The following AquariumPlace have FSeeks for the 12 unused slots.
+    // In-game you can only place maximum 4 "big" (2x2) creatures
+    AquariumPlace_t AquariumPlaceCoral[4]<optimize=true>;
+    junkchar junk1[0x30];
+    AquariumPlace_t AquariumPlaceDeep[4]<optimize=true>;
+    junkchar junk2[0x30];
+    AquariumPlace_t AquariumPlaceCold[4]<optimize=true>;
+    junkchar junk3[0x30];
+    AquariumPlace_t AquariumPlaceTropical[4]<optimize=true>;
+    junkchar junk4[0x30];
+    AquariumPlace_t AquariumPlaceAnnex[4]<optimize=true>;
+    junkchar junk5[0x30];
+    int AquariumVisitors[14]<bgcolor=cBlue>; // Cap at 5000
+    int AquariumVisitorsTotal<bgcolor=cLtBlue>; // Cap at 999999999
+    int DaysSinceOpening<bgcolor=cLtBlue>;
+    int AquariumVisitorsBeforeLastVisit<bgcolor=cLtBlue>;
+    // Set to 1 when Hayako says "The increase in the total number of visitors since last visit"
+    // Set to 0 when day passes
+    byte Flags<bgcolor=cRed>;
+    // Suck level. Increase by 1 every 7 days. Cap at 20.
+    byte AquariumWeeksPassedWithoutPlacingWeMainTankCreatures<bgcolor=cLtRed>;
+    byte AquariumWeeksPassedWithoutPlacingSmallWorldCreatures<bgcolor=cLtRed>;
+    byte AquariumWeeksPassedWithoutPlacingAnnexCreatures<bgcolor=cLtRed>;
+    // Increase by 1 every day. From 0 to 6
+    byte DayOfWeek<bgcolor=cLtBlue>;
+    FSeek(0x8B7);
+    byte AquariumCreaturesSatisfyRequestCount<bgcolor=cLtBlue>;
+    // Requests/Trends/Themes/Topics:
+    // Species from Deep Hole in Gatama Atoll--such a wonderful, eternally blue sea.
+    // Species from Ciceros Strait--a sea so blue you could siappear into it.
+    // Species from Valka Castle--those sunken ruins shrouded in mystery.
+    // Species from Zahhab Region--blazing like a blue diamond in the Red Sea.
+    // Species from Zahhab Region Depths--terrifying, yet all want to see them.
+    // Species from the Cavern of the Gods, which we still know so little about.
+    // Species from the Weddell Sea--that frozen land dominated by ice.
+    // Species from the North Coast of Canada, with its eternally shining drift ice.
+    // Species from the Cortica River, with its unique blend of danger and mystery.
+    // Large schools of fish make a very powerful impression.
+    // Young sea creatures might prove fascinating to the visitors.
+    // It's always thrilling to see dangerous animals.
+    // Marine mammals and large animals that are impressive for their size and endurance.
+    // Seabirds that fly across the oceans with such elegance.
+    byte AquariumVisitorsRequest<bgcolor=cLtBlue>;
+    // Increase by 1 every day. Cap at 7
+    byte AquariumDaysSinceLastVisit<bgcolor=cLtBlue>;
+};
+
+struct Save_t
+{
+    // Game reads max 0x12 bytes on character select screen and stops at the first 0x00.
+    // When Jean-Eric asks about your name, 0x10 characters is the max
+    // When opening the "Records" screen, it's until a 0x00
+    // When erasing the string and copying the "NoName" string, it copies 0x14 bytes
+    char Name[0x10]<bgcolor=cSilver>;
+    FSeek(0x54);
+    short Sex<bgcolor=cAqua>; // 0 male, 1 female. Does not change in the character select screen(?)
+    FSeek(0x64);
+    ushort DivingLevel<bgcolor=cAqua>;
+    FSeek(0x6C);
+    ushort SalvageLevel<bgcolor=cAqua>;
+    FSeek(0x74);
+    ushort CompanyRating<bgcolor=cAqua>; // max 10
+    FSeek(0x84);
+    int UsedZoomModeCopy<bgcolor=cAqua>;
+    FSeek(0x90);
+    int UsedAutoSwimCopy<bgcolor=cAqua>;
+    int FocusedOnAnimalCopy<bgcolor=cAqua>;
+    FSeek(0xA0);
+    int TalkedWithOceanaDivingCount<bgcolor=cAqua>;
+    int RideWhaleCount<bgcolor=cAqua>;
+    FSeek(0xDC);
+    byte EventFlag[0xA4]<bgcolor=cDkRed>;
+    FSeek(0x194);
+    int DayOfTheMonth<bgcolor=cAqua>;
+    FSeek(0x1FC);
+    int LastLocation<bgcolor=cAqua>; // Index of array at 805733a8/0056F4A8. Last digit of MapID. If 0, -1 or greater than 6, load nineball.    
+    FSeek(0x224);
+    byte Titles[0x28]<bgcolor=cLtBlue>;
+    FSeek(0x254);
+    // 0 Midnight
+    // 21600 Sunrise
+    // 43200 Noon
+    // 64800 Sunset
+    // 0 - 86399
+    float TimeOfDay<bgcolor=cGreen>;
+    // Starts at 39966 (calculated @80025cd4: 1 + 181 + (2009 - 1900) * 365 -1
+    int PassedDays<bgcolor=cAqua>;
+    Dolphin_t Dolphin[11]<optimize=true>;
+    RequestTour_t RequestTour[3]<optimize=true>;
+    RequestSalvage_t RequestSalvage[3]<optimize=true>;
+    RequestPhoto_t RequestPhoto[3]<optimize=true>;
+    RequestDolphin_t RequestDolphin[3]<optimize=true>;
+    FSeek(0x6EC);
+    Aquarium_t Aquarium[1];
+    FSeek(0x8BC);
+    char PrivateReefGridItemsId[195]<bgcolor=cDkBlue>;    
+    FSeek(0xA14);
+    int PrivateReefTotalNumberOfCreaturesReleased<bgcolor=cBlue>;
+    FSeek(0xA1C);
+    short Bag[0x14]<bgcolor=cLtBlue>;
+    byte Salvages[0x34]<bgcolor=cLtBlue>;
+    byte Coins[0x1C]<bgcolor=cLtBlue>;
+    FSeek(0xA94);
+    int Pelagos<bgcolor=cBlue>;
+    ExploredMap_t ExploredMap[1]<optimize=true>;
+    FSeek(0xF1C);
+    float PlayTimeSeconds<bgcolor=cGreen>; // increases by 1 every second. Cap at 3599999
+    FSeek(0xF24);
+    Gear_t Gear[1]<optimize=true>;
+    short DivingControls<bgcolor=cLtBlue>;
+    FSeek(0xFA4);
+    byte Items[0x30]<bgcolor=cLtBlue>;
+    Records_t Records[1]<optimize=true>;
+    // Young Entrepreneur
+    // 0x1168, 3 bytes (55 55 54 XX XX XX XX 05), first bit is "4"
+    // 0x1197
+    // 0x10 -> p2 of 1
+    // 0x20 -> clear
+    // 0x1196
+    // 0x1 -> p2 of 3
+    // 0x2 -> p2+clear of 3
+    // 0x4 -> p2 of 4
+    // 0x8 -> p2+p3+clear of 4
+
+    // Bit 0: unlocked
+    // Bit 1: new
+    int Notebook[0x12]<bgcolor=cLtBlue>;
+    int NotebookProgress[0xA]<bgcolor=cDkBlue>;
+    FSeek(0x11B0);
+    float MusicVolume<bgcolor=cGreen>;
+    float SFXVolume<bgcolor=cGreen>;
+    FSeek(0x11C0);
+    i = 0;
+    Ency_t Ency[459]<optimize=false>;
+};
+
+
+
+/*
+uVar3 = Sum of -AquariumWeeksPassedWithoutReplacingCreatures + AquariumCreaturesSatisfyRequestCount
+int iVar2;
+if ((int)uVar3 < -30) {
+    // Feedback from the visitors hasn't been very good...
+    // The visitors are fairly disappointed, from what I can see...
+    iVar2 = ((int)uVar3 >> 0x1f) + (0xffffffd7 < uVar3) + 1;
+} else if ((int)uVar3 < -10) {
+    // The visitors don't seem to be that interested in the displays...
+    iVar2 = 2;
+} else if ((int)uVar3 < 0) {
+    // Visitor feedback has been fairly neutral. No complaints, but nothing positive either.
+    iVar2 = 3;
+} else if ((int)uVar3 < 5) {
+    // Our recent visitors seem to be really enjoying the displays.
+    iVar2 = 4;
+} else if ((int)uVar3 < 10) {
+    // Good feedback from the visitors! They seem quite interested now.
+    iVar2 = 5;
+} else if ((int)uVar3 < 20) {
+    // The visitors say they've never seen anything like this before. They love it!
+    iVar2 = 6;
+} else {
+    // Everyone loves the exhibits. Some are even calling them the best in the world!
+    iVar2 = 7;
+}
+return iVar2;
+
+*/
+
+Header_t Header[1];
+Save_t Save[1]<optimize=true>;
+Printf("\n");
+Printf("CheckSum1 (field at 0x0 should be this): %08X\n", CalculateCheckSum1());
+Printf("CheckSum2 (field at 0x22 should be this): %04X\n", CalculateCheckSum2());
+DumpDecryptedData();
+DumpEncryptedData();
+
